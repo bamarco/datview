@@ -18,6 +18,7 @@
             [reagent.core :as r]
             [reagent.ratom :as ratom]
             [re-com.core :as re-com]
+            [re-com.input-time]
             ;; Other stuff
             [datafrisk.core :as frisk]
             [taoensso.timbre :as log :include-macros true]
@@ -746,7 +747,7 @@
 (defn datetime-with-time-int [datetime time-int]
   (let [dt (cljs-time/to-default-time-zone datetime)
         dt-with-time (cljs-time/local-date-time (cljs-time/year dt) (cljs-time/month dt) (cljs-time/day dt)
-                                 (input-time/time->hrs time-int) (input-time/time->mins time-int)
+                                 (re-com.input-time/time->hrs time-int) (re-com.input-time/time->mins time-int)
                                  (cljs-time/second dt) (cljs-time/milli dt)
                                  ;; FIXME: 2400 + second & milli does not exist
                                  )
@@ -779,14 +780,6 @@
   (let [dt (cljs-time/to-default-time-zone datetime)]
     (+ (* 100 (cljs-time/hour dt))
       (cljs-time/minute dt))))
-
-;; (defn datetime-selector
-;;   [app eid attr-ident value]
-;;   (let [current-value (atom value)]
-;;     (fn [app eid attr-ident value]
-;;       [:datetime-selector
-;;        [re-com/datepicker-dropdown :model (cljs-time.coerce/from-date (or @current-value (cljs-time/now)))
-;;         :on-change (partial datetime-date-change-handler app eid attr-ident current-value)]])))
 
 (representation/register-representation
   ::datetime-selector
@@ -871,7 +864,7 @@
         [select-entity-input app eid attr-ident value]
         ;; Need separate handling of datetimes
         [{:db/valueType :db.type/instant}]
-        [datetime-selector app eid attr-ident value]
+        [represent app [::datetime-selector local-context] [eid attr-ident value]]
         ;; Booleans should be check boxes
         [{:db/valueType :db.type/boolean}]
         [boolean-selector app eid attr-ident value]
