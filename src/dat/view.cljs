@@ -18,6 +18,7 @@
             [reagent.core :as r]
             [reagent.ratom :as ratom]
             [re-com.core :as re-com]
+            [re-com.input-time :as input-time]
             ;; Other stuff
             [datafrisk.core :as frisk]
             [taoensso.timbre :as log :include-macros true]
@@ -265,14 +266,14 @@
 (representation/register-representation
   ::pull-summary-string
   (fn [_ _ pull-data]
-    ;[:span
+    [:span
      (match [pull-data]
        [{:e/name name}] name
        [{:attribute/label label}] label
        [{:db/ident ident}] (name ident)
        [{:e/type {:db/ident type-ident}}] (str (name type-ident) " instance")
        ;; A terrible assumption really, but fine enough for now
-       :else (pr-str pull-data))))
+       :else (pr-str pull-data))]))
 
 (defn pull-summary-string
   ([app pull-data]
@@ -285,7 +286,7 @@
   ::pull-summary-view
   (fn [app [_ context] pull-data]
     [:div {:style {:font-weight "bold" :padding "5px" :align-self "end"}}
-     [represent app [::pull-summary-string (:dat.view.context/locals context) pull-data]]]))
+     [represent app [::pull-summary-string (:dat.view.context/locals context)] pull-data]]))
 
 (defn pull-summary-view
   [app context pull-data]
@@ -753,39 +754,73 @@
 ;        new-time (cljs-time/plus new-date day-time)]
 ;    new-time))
 
-(defn update-date
-  [old-instant new-date]
-  ;; For now...
-  new-date)
+;; (defn update-date
+;;   [old-instant new-date]
+;;   ;; For now...
+;;   new-date)
 
-(defn datetime-date-change-handler
-  [app eid attr-ident current-value new-date-value]
+(defn datetime-with-time-int [datetime time-int]
+  (let [dt (cljs-time/to-default-time-zone datetime)
+        dt-with-time (cljs-time/local-date-time (cljs-time/year dt) (cljs-time/month dt) (cljs-time/day dt)
+                                 (input-time/time->hrs time-int) (input-time/time->mins time-int)
+                                 (cljs-time/second dt) (cljs-time/milli dt)
+                                 ;; FIXME: 2400 + second & milli does not exist
+                                 )
+        dt-utc (cljs-time.coerce/to-date-time dt-with-time)]
+    dt-utc))
+
+(defn datetime-with-date [dt date]
+  (log/info "date-val" date)
+  (cljs-time/date-time (cljs-time/year date) (cljs-time/month date) (cljs-time/day date) (cljs-time/hour dt) (cljs-time/minute dt) (cljs-time/second dt) (cljs-time/milli dt)))
+
+(defn datetime-change-handler
+  [app datetime-mask-fn eid attr-ident current-value new-partial-value]
   (let [old-value @current-value
-        new-value (update-date old-value new-date-value)]
+        new-value (datetime-mask-fn old-value new-partial-value)]
     (reset! current-value new-value)
     (send-tx! app
               (concat (when old-value
                         [[:db/retract eid attr-ident (cljs-time.coerce/to-date old-value)]])
                       [[:db/add eid attr-ident (cljs-time.coerce/to-date new-value)]]))))
 
-;; XXX Finish
-(defn datetime-time-change-handler
+(defn datetime-date-change-handler
+  [app eid attr-ident current-value new-date-value]
+  (datetime-change-handler app datetime-with-date eid attr-ident current-value new-date-value))
+
+(defn datetime-time-int-change-handler
   [app eid attr-ident current-value new-time-value]
-  ())
+  (datetime-change-handler app datetime-with-time-int eid attr-ident current-value new-time-value))
 
-(defn timeint-from-datetime
-  [datetime])
+(defn datetime->time-int [datetime]
+  (let [dt (cljs-time/to-default-time-zone datetime)]
+    (+ (* 100 (cljs-time/hour dt))
+      (cljs-time/minute dt))))
 
+;; (defn datetime-selector
+;;   [app eid attr-ident value]
+;;   (let [current-value (atom value)]
+;;     (fn [app eid attr-ident value]
+;;       [:datetime-selector
+;;        [re-com/datepicker-dropdown :model (cljs-time.coerce/from-date (or @current-value (cljs-time/now)))
+;;         :on-change (partial datetime-date-change-handler app eid attr-ident current-value)]])))
 
-(defn datetime-selector
-  [app eid attr-ident value]
-  (let [current-value (atom value)]
-    (fn [app eid attr-ident value]
-      [:datetime-selector
-       [re-com/datepicker-dropdown :model (cljs-time.coerce/from-date (or @current-value (cljs-time/now)))
-        :on-change (partial datetime-date-change-handler app eid attr-ident current-value)]])))
-;[re-com/input-time :model (timeint-from-datetime @current-value)
-;:on-change (partial datetime-time-change-handler app eid attr-ident current-value)]
+(representation/register-representation
+  ::datetime-selector
+  (fn [app [_ context] [eid attr-ident value]]
+    (let [current-utc-datetime (r/atom (or (cljs-time.coerce/from-date value) (cljs-time/now)))
+          ;;current-time-int (ratom/make-reaction (fn [] ))
+          ]
+      (fn [app [_ context] [eid attr-ident value]]
+;;           (log/info "current-time-int" @current-time-int)
+          [re-com/h-box
+           :children
+           [
+             [re-com/datepicker-dropdown :model @current-utc-datetime
+             :on-change (partial datetime-date-change-handler app eid attr-ident current-utc-datetime)]
+            [re-com/input-time :model (datetime->time-int @current-utc-datetime)
+             :on-change (partial datetime-time-int-change-handler app eid attr-ident current-utc-datetime)]
+            ]]
+          ))))
 
 
 (defn boolean-selector
@@ -853,7 +888,7 @@
         [select-entity-input app eid attr-ident value]
         ;; Need separate handling of datetimes
         [{:db/valueType :db.type/instant}]
-        [datetime-selector app eid attr-ident value]
+        [represent app [::datetime-selector local-context] [eid attr-ident value]]
         ;; Booleans should be check boxes
         [{:db/valueType :db.type/boolean}]
         [boolean-selector app eid attr-ident value]
@@ -1409,7 +1444,7 @@
 
 ;; Should make this derefable
 
-(defrecord Datview 
+(defrecord Datview
   ;;  The public API: these two attributes
   [conn   ;; You can access this for your posh queries; based on reactor unless otherwise specified
    config ;; How you control the instantiation of Datview; options:
