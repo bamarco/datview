@@ -265,14 +265,14 @@
 (representation/register-representation
   ::pull-summary-string
   (fn [_ _ pull-data]
-    ;[:span
+    [:span
      (match [pull-data]
        [{:e/name name}] name
        [{:attribute/label label}] label
        [{:db/ident ident}] (name ident)
        [{:e/type {:db/ident type-ident}}] (str (name type-ident) " instance")
        ;; A terrible assumption really, but fine enough for now
-       :else (pr-str pull-data))))
+       :else (pr-str pull-data))]))
 
 (defn pull-summary-string
   ([app pull-data]
@@ -285,7 +285,7 @@
   ::pull-summary-view
   (fn [app [_ context] pull-data]
     [:div {:style {:font-weight "bold" :padding "5px" :align-self "end"}}
-     [represent app [::pull-summary-string (:dat.view.context/locals context) pull-data]]]))
+     [represent app [::pull-summary-string (:dat.view.context/locals context)] pull-data]]))
 
 (defn pull-summary-view
   [app context pull-data]
@@ -1409,7 +1409,7 @@
 
 ;; Should make this derefable
 
-(defrecord Datview 
+(defrecord Datview
   ;;  The public API: these two attributes
   [conn   ;; You can access this for your posh queries; based on reactor unless otherwise specified
    config ;; How you control the instantiation of Datview; options:
